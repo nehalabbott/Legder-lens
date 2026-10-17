@@ -4,7 +4,10 @@ import pandas as pd
 from pathlib import Path
 from groq import Groq
 import os
+from dotenv import load_dotenv
 from pydantic import BaseModel
+
+load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -126,9 +129,14 @@ def fallback_heuristics(df):
     """
     cause_map = {
         "FEE_VARIANCE": "FEE_VARIANCE_UNRESOLVED",
-        "NET_MISMATCH": "GATEWAY_OVERCHARGE",
+        "TAX_VARIANCE": "TAX_VARIANCE_UNRESOLVED",
+        "CONTRACT_VARIANCE": "CONTRACT_VARIANCE_UNRESOLVED",
+        "NET_MISMATCH": "NET_MISMATCH_UNRESOLVED",
         "MISSING_IN_GATEWAY": "GHOST_TXN_BANK_SIDE",
         "MISSING_IN_BANK": "GHOST_TXN_GATEWAY_SIDE",
+        "DUPLICATE_IN_LEDGER": "DUPLICATE_RECORD_BANK_SIDE",
+        "DUPLICATE_IN_GATEWAY": "DUPLICATE_RECORD_GATEWAY_SIDE",
+        "INVALID_DATA": "DATA_QUALITY_ISSUE",
     }
     results = []
     for _, row in df.iterrows():

@@ -13,9 +13,9 @@ CONTRACT_PATH = ROOT / "contracts" / "ochicken_contract.json"
 with open(CONTRACT_PATH) as f:
     CONTRACT = json.load(f)
 
-# Expanded date range covering July 14, 15, 31, and Aug 1 to test promo boundaries
+# 30-day settlement cycle, covering July 14, 15, 31, and Aug 1 to test promo boundaries
 START_DATE = date(2026, 7, 13)
-NUM_DAYS = 22
+NUM_DAYS = 30
 STARTING_BALANCE = 1_200_000.00
 
 ERROR_INJECTION_RATE = 0.15
@@ -137,7 +137,7 @@ def generate():
         truth_rows.append([txn_id_counter, "CARD_TERMINAL_SETTLEMENT", gross_card, correct["fee"], correct["gst"], correct["net"], stated_net, round2(stated_net - correct["net"]), final_err])
 
         # 2. Razorpay batch payouts
-        for _ in range(random.choice([0, 1, 1, 2])):
+        for _ in range(random.choice([0, 1, 1, 2, 2, 3])):
             gross_rzp = round2(random.uniform(500, 90000))
             is_upi = random.random() < 0.35
             correct = compute_correct_razorpay_payout(gross_rzp, is_upi)
@@ -167,6 +167,32 @@ def generate():
             # Duplicate transaction edge case (ledger side)
             if random.random() < 0.02:
                 ledger_rows.append([txn_id_counter, date_str, "RAZORPAY_PAYOUT_BATCH", f"RAZORPAY PAYOUT {tag} {date_str} DUP", "", stated_net, balance])
+
+    # Additional static edge cases so the end-to-end pipeline (not just the
+    # unit tests) exercises every exception type the reconciler can produce.
+    txn_id_counter += 1
+    missing_in_bank_id = txn_id_counter
+    gross_mib = 22500.00
+    correct_mib = compute_correct_card_settlement(gross_mib, date(2026, 7, 20))
+    # Gateway processed and reported this settlement, but it never shows up
+    # in the bank ledger at all (e.g. a failed/returned bank transfer).
+    rzp_rows.append([missing_in_bank_id, gross_mib, correct_mib["fee"], correct_mib["gst"], correct_mib["net"]])
+    truth_rows.append([missing_in_bank_id, "CARD_TERMINAL_SETTLEMENT", gross_mib, correct_mib["fee"],
+                        correct_mib["gst"], correct_mib["net"], 0.0, -correct_mib["net"], "MISSING_IN_BANK"])
+
+    txn_id_counter += 1
+    dup_gateway_id = txn_id_counter
+    gross_dg = 5000.00
+    correct_dg = compute_correct_razorpay_payout(gross_dg, is_upi_routed=False)
+    date_str_dg = date(2026, 7, 22).strftime("%d/%m/%y")
+    balance = round2(balance + correct_dg["net"])
+    ledger_rows.append([dup_gateway_id, date_str_dg, "RAZORPAY_PAYOUT_BATCH",
+                         f"RAZORPAY PAYOUT CARD-ONLINE-BATCH {date_str_dg}", "", correct_dg["net"], balance])
+    # Gateway report accidentally contains the same settlement twice.
+    rzp_rows.append([dup_gateway_id, gross_dg, correct_dg["fee"], correct_dg["gst"], correct_dg["net"]])
+    rzp_rows.append([dup_gateway_id, gross_dg, correct_dg["fee"], correct_dg["gst"], correct_dg["net"]])
+    truth_rows.append([dup_gateway_id, "RAZORPAY_PAYOUT_BATCH", gross_dg, correct_dg["fee"], correct_dg["gst"],
+                        correct_dg["net"], correct_dg["net"], 0.0, "None (Valid Variance)"])
 
     DATA_DIR.mkdir(exist_ok=True)
     

@@ -2,15 +2,18 @@ import hmac
 import hashlib
 import os
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Header
 from pydantic import BaseModel
+from dotenv import load_dotenv
 from groq import Groq
 
+load_dotenv()
+
 app = FastAPI(
-    title="O'Chicken AI Finance Controller - Real-Time Webhook Gateway",
-    version="1.0.1"
+    title="LedgerLens - Real-Time Webhook Gateway",
+    version="1.1.0"
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,7 +22,12 @@ PROMO_START = date(2026, 7, 15)
 PROMO_END = date(2026, 7, 31)
 PROMO_MDR_RATE = 1.50 / 100
 
-# Replaced Gemini with the unified Groq client architecture
+# WEBHOOK_STRICT_MODE=true refuses any webhook when RAZORPAY_WEBHOOK_SECRET
+# is not configured, instead of warning and accepting it unsigned. Off by
+# default so the demo works without secrets configured; turn it on for
+# anything resembling a real deployment.
+STRICT_MODE = os.environ.get("WEBHOOK_STRICT_MODE", "false").strip().lower() == "true"
+
 api_key = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=api_key) if api_key else None
 
@@ -41,31 +49,62 @@ def load_contract():
         return json.load(f)
 
 async def verify_razorpay_signature(body: bytes, signature: str):
-    """Validates the webhook originated from Razorpay."""
-    secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").encode()
-    if not secret:
-        print("⚠️ Warning: RAZORPAY_WEBHOOK_SECRET not set. Skipping validation.")
+    """Validates the webhook originated from Razorpay.
+
+    In STRICT_MODE, a missing secret is a hard failure (fail closed). In the
+    default (demo-friendly) mode it logs a loud warning and allows the
+    request through unsigned, matching the non-strict behavior this project
+    shipped with, but surfaced explicitly rather than silently.
+    """
+    secret_str = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+    if not secret_str:
+        if STRICT_MODE:
+            raise HTTPException(
+                status_code=500,
+                detail="RAZORPAY_WEBHOOK_SECRET is not configured and WEBHOOK_STRICT_MODE=true; refusing to process unsigned webhooks.",
+            )
+        print("⚠️ Warning: RAZORPAY_WEBHOOK_SECRET not set. Skipping signature validation "
+              "(set WEBHOOK_STRICT_MODE=true to refuse unsigned requests instead).")
         return
-        
-    expected_sig = hmac.new(secret, body, hashlib.sha256).hexdigest()
+
+    expected_sig = hmac.new(secret_str.encode(), body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected_sig, signature):
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
+
 def adapt_razorpay_payload(raw_payload: dict) -> SettlementEvent:
-    """Transforms a genuine Razorpay payload into the internal schema."""
+    """Transforms a genuine Razorpay payload into the internal schema.
+
+    Known limitation: Razorpay's settlement.processed webhook does not carry
+    a payment-method breakdown on the settlement entity itself (a settlement
+    batches many underlying payment methods together), so `is_upi_routed`
+    cannot be derived from this payload alone and is conservatively left as
+    False -- meaning a UPI-heavy settlement could be flagged as a false
+    CONTRACT_VARIANCE here. A production integration would need to fetch the
+    underlying payment/transfer list for the settlement to resolve this.
+    """
     entity = raw_payload.get("payload", {}).get("settlement", {}).get("entity", {})
-    
+
+    created_at_epoch = entity.get("created_at")
+    if created_at_epoch:
+        txn_date = datetime.fromtimestamp(created_at_epoch, tz=timezone.utc).strftime("%Y-%m-%d")
+    else:
+        # Fall back to "now" only if Razorpay didn't supply a timestamp, and
+        # make that fallback visible rather than silent.
+        print("⚠️ Warning: settlement payload had no 'created_at'; using current date, "
+              "which may misclassify promo-window eligibility.")
+        txn_date = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+
     # Razorpay uses paise; convert to INR
     return SettlementEvent(
         transaction_id=entity.get("id", "UNKNOWN"),
-        # Timestamp conversion omitted for brevity; assuming date format YYYY-MM-DD
-        date=datetime.now().strftime("%Y-%m-%d"), 
+        date=txn_date,
         gross_amt=entity.get("amount", 0) / 100.0,
         fee_deducted=entity.get("fees", 0) / 100.0,
         tax_deducted=entity.get("tax", 0) / 100.0,
         net_credited=entity.get("amount_settled", 0) / 100.0,
         payment_method="RAZORPAY_PAYOUT_BATCH",
-        is_upi_routed=False 
+        is_upi_routed=False,
     )
 
 def compute_expected_fee(contract, event: SettlementEvent):
@@ -87,7 +126,7 @@ def compute_expected_fee(contract, event: SettlementEvent):
 
 @app.get("/")
 def health_check():
-    return {"status": "active", "service": "O'Chicken Real-Time Webhook Gateway"}
+    return {"status": "active", "service": "LedgerLens Real-Time Webhook Gateway", "strict_mode": STRICT_MODE}
 
 @app.post("/api/v1/reconcile-webhook")
 async def process_incoming_settlement(

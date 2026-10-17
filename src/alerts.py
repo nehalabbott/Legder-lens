@@ -3,6 +3,9 @@ import os
 import urllib.request
 import pandas as pd
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -139,4 +142,4 @@ def dispatch_finance_alert(webhook_url: str = None):
             print(f"Failed to deliver webhook live: {e}")
 
 if __name__ == "__main__":
-    dispatch_finance_alert()
+    dispatch_finance_alert(webhook_url=os.environ.get("FINANCE_ALERT_WEBHOOK_URL") or None)

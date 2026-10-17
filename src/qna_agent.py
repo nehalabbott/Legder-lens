@@ -2,12 +2,13 @@ import os
 import pandas as pd
 import json
 from pathlib import Path
+from dotenv import load_dotenv
 from groq import Groq
+
+load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# BUG FIX: Replaced Gemini client initialization with Groq. 
-# Graceful fallback pattern maintained.
 try:
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 except Exception as e:
@@ -50,8 +51,8 @@ def run_finance_chat():
         print(f"❌ {e}")
         return
 
-    system_instruction = f"""You are the O'Chicken Financial Q&A Assistant.
-You answer user questions based EXCLUSIVELY on this merchant contract and the audit data.
+    system_instruction = f"""You are the LedgerLens Financial Q&A Assistant.
+You answer user questions based EXCLUSIVELY on this merchant contract and the audit data below.
 
 Contract Terms:
 {json.dumps(contract)}
@@ -60,9 +61,11 @@ Audit Exceptions Data:
 {json.dumps(optimized_audit_data)}
 
 Rules:
-1. Trace all answers back to specific Transaction IDs.
-2. Clearly explain the math or contract clause that justifies your answer.
-3. Be concise and professional.
+1. Trace all answers back to specific Transaction IDs that appear in the data above.
+2. Never invent transaction IDs, amounts, dates, or root causes that are not present in this data.
+   If asked about a transaction that isn't in the data above, say so explicitly instead of guessing.
+3. Clearly explain the math or contract clause that justifies your answer.
+4. Be concise and professional.
 """
 
     print("Booting Settlement Q&A Agent... \n")

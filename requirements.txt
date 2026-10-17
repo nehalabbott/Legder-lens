@@ -1,0 +1,20 @@
+# Core data processing
+pandas>=2.1,<3.0
+
+# Tier 2 AI diagnostic agent (Groq) + structured output schema
+groq>=0.11.0
+pydantic>=2.6,<3.0
+
+# Tier 3 real-time webhook gateway
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+
+# Tier 4 operator dashboard
+streamlit>=1.35,<2.0
+
+# Local environment variable loading (.env support)
+python-dotenv>=1.0,<2.0
+
+# Testing
+pytest>=8.0,<9.0
+httpx>=0.27,<1.0          # required by fastapi.testclient.TestClient

@@ -16,7 +16,7 @@
     "description": "Batch payout of online/UPI-via-Razorpay collections, net of platform commission.",
     "commission_rate_percent": 2,
     "gst_on_commission_percent": 18,
-    "commission_waived_below_amount": 100,
+    "commission_waived_below_amount": 1000,
     "special_clause": "Transactions settled via UPI collect flagged as 'UPI-' in narration are commission-free per NPCI zero-MDR-on-UPI mandate; only card/wallet-routed online payments attract the 2% commission."
   },
   "mdr_recovery_charge": {
