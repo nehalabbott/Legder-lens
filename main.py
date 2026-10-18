@@ -1,12 +1,16 @@
 import subprocess
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()  # loads GROQ_API_KEY / RAZORPAY_WEBHOOK_SECRET / etc. from .env,
+                # then propagates into the child processes spawned below.
 
 ROOT = Path(__file__).resolve().parent
 
 def run_pipeline():
     print("="*60)
-    print("🚀 BOOTING O'CHICKEN AI FINANCE CONTROLLER PIPELINE 🚀")
+    print("🚀 BOOTING LEDGERLENS RECONCILIATION PIPELINE 🚀")
     print("="*60)
 
     scripts = [

@@ -7,8 +7,10 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 
-# Replaced google-genai with groq and added streamlit for the dashboard
-RUN pip install --no-cache-dir pandas fastapi uvicorn groq pydantic streamlit
+# Install Python dependencies from the pinned requirements file (single
+# source of truth, shared with local/CI installs).
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files into the container
 COPY . /app/

@@ -1,18 +1,26 @@
 import streamlit as st
 import pandas as pd
 import json
-from pathlib import Path
-from groq import Groq
 import os
+from pathlib import Path
 
-# Page Config
-st.set_page_config(
-    page_title="O'Chicken AI Finance Controller",
-    page_icon="🐔",
-    layout="wide"
+from dotenv import load_dotenv
+from groq import Groq
+
+from dashboard_utils import (
+    build_qna_context,
+    compute_kpis,
+    fallback_was_used,
+    resolve_action_column,
+    resolve_discrepancy_column,
 )
 
+load_dotenv()
+
+st.set_page_config(page_title="LedgerLens — Finance Reconciliation Controller", page_icon="📒", layout="wide")
+
 ROOT = Path(__file__).resolve().parent.parent
+
 
 @st.cache_data
 def load_data():
@@ -20,63 +28,48 @@ def load_data():
     if not audit_path.exists():
         return pd.DataFrame(), {}
     audit_df = pd.read_csv(audit_path)
-    with open(ROOT / 'contracts' / 'ochicken_contract.json', 'r') as f:
+    with open(ROOT / "contracts" / "ochicken_contract.json", "r") as f:
         contract = json.load(f)
     return audit_df, contract
 
+
 audit_df, contract = load_data()
 
-# Header
-st.title("🐔 O'Chicken AI Finance Controller")
-st.markdown("**Razorpay AI Buildathon 2026 | Track 04 Finance Operations Hub**")
+st.title("📒 LedgerLens — AI-Assisted Finance Reconciliation Controller")
+st.caption("Deterministic bank ↔ gateway reconciliation, with AI used only to explain and triage exceptions "
+           "— never to decide the numbers.")
 st.markdown("---")
 
 if audit_df.empty:
-    st.warning("⚠️ No audit sheet found. Run `python main.py` first to execute reconciliation.")
+    st.warning("⚠️ No audit sheet found. Run `python main.py` first to execute the reconciliation pipeline.")
     st.stop()
 
-# 1. Standardize Schema Across New & Legacy Columns
-discrepancy_col = "Discrepancy (₹)" if "Discrepancy (₹)" in audit_df.columns else "variance_inr"
+discrepancy_col = resolve_discrepancy_column(audit_df)
 if discrepancy_col not in audit_df.columns:
     audit_df[discrepancy_col] = 0.0
+action_col = resolve_action_column(audit_df)
 
-if "Actual Planted Error" in audit_df.columns:
-    real_leak_mask = audit_df["Actual Planted Error"] != "None (Valid Variance)"
-else:
-    real_leak_mask = pd.Series([True] * len(audit_df))
+kpis = compute_kpis(audit_df)
 
-action_col = "recommended_action" if "recommended_action" in audit_df.columns else "Agent Recommended Action"
-escalated_mask = audit_df[action_col].astype(str).str.contains("ESCALATE", case=False, na=False) if action_col in audit_df.columns else pd.Series([True] * len(audit_df))
-
-total_at_risk = float(audit_df.loc[real_leak_mask, discrepancy_col].abs().sum())
-recovered = float(audit_df.loc[real_leak_mask & escalated_mask, discrepancy_col].abs().sum())
-recovery_pct = (recovered / total_at_risk * 100) if total_at_risk > 0 else 0.0
-missed_leaks = int(real_leak_mask.sum() - (real_leak_mask & escalated_mask).sum())
-
-# 2. Executive KPI Cards
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("Total Capital at Risk", f"₹{total_at_risk:,.2f}")
+    st.metric("Total Capital at Risk", f"₹{kpis['total_at_risk']:,.2f}")
 with col2:
-    st.metric("Capital Recovered", f"₹{recovered:,.2f}", delta=f"{recovery_pct:.1f}% Recovery")
+    st.metric("Capital Recovered", f"₹{kpis['recovered']:,.2f}", delta=f"{kpis['recovery_pct']:.1f}% Recovery")
 with col3:
-    st.metric("Real Leaks Missed", missed_leaks, delta=None if missed_leaks == 0 else "Needs attention", delta_color="inverse")
+    st.metric("Real Leaks Missed", kpis["missed_leaks"],
+               delta=None if kpis["missed_leaks"] == 0 else "Needs attention", delta_color="inverse")
 with col4:
-    st.metric("Actionable Exceptions", len(audit_df))
+    st.metric("Actionable Exceptions", kpis["total_exceptions"])
 
-# Fallback diagnostic indicator
-fallback_used = False
-if "confidence" in audit_df.columns:
-    fallback_used = (audit_df["confidence"] == 0.0).any()
-elif "Used LLM" in audit_df.columns:
-    fallback_used = (~audit_df["Used LLM"]).any()
-
-if fallback_used:
-    st.warning("⚠️ One or more exceptions used deterministic fallback heuristics. Verify GROQ_API_KEY for live agentic diagnoses.")
+if fallback_was_used(audit_df):
+    st.warning("⚠️ One or more exceptions used the deterministic fallback heuristic (no live LLM call). "
+               "Root-cause text for those rows is a generic placeholder, not an AI diagnosis — "
+               "set GROQ_API_KEY to enable live diagnostics. See the 'confidence' / 'Used LLM' column.")
 
 st.markdown("---")
 
-# 3. Finance Operator Action Card (Judge UX Recommendation)
+# --- Operator Action Card -----------------------------------------------
 st.subheader("⚡ Operator Action Queue (Highest Risk Triage)")
 high_risk_subset = audit_df.sort_values(by=discrepancy_col, key=abs, ascending=False)
 
@@ -86,7 +79,11 @@ if not high_risk_subset.empty:
     variance_amt = abs(float(top_txn.get(discrepancy_col, 0.0)))
     cause_desc = top_txn.get("root_cause", top_txn.get("Agent Diagnosis", "Discrepancy detected"))
     rec_action = top_txn.get("recommended_action", top_txn.get("Agent Recommended Action", "ESCALATE TO HUMAN REVIEW"))
-    confidence_score = top_txn.get("confidence", 1.0)
+    confidence_score = top_txn.get("confidence", top_txn.get("Agent Confidence", 1.0))
+    try:
+        confidence_score = float(confidence_score)
+    except (TypeError, ValueError):
+        confidence_score = 1.0
 
     with st.container(border=True):
         t_col1, t_col2 = st.columns([3, 1])
@@ -103,21 +100,58 @@ if not high_risk_subset.empty:
 
 st.markdown("---")
 
-# 4. Filterable Audit Table
+# --- Filterable, selectable audit table ----------------------------------
 st.subheader("📊 Complete Audit Sheet")
-search_term = st.text_input("🔍 Search by Transaction ID, Cause, or Recommendation:", "")
+
+f_col1, f_col2, f_col3 = st.columns([2, 1, 1])
+with f_col1:
+    search_term = st.text_input("🔍 Search by Transaction ID, Cause, or Recommendation:", "")
+with f_col2:
+    detection_rule_col = "Detection Rule" if "Detection Rule" in audit_df.columns else "exception_type"
+    rule_options = sorted(audit_df[detection_rule_col].dropna().unique()) if detection_rule_col in audit_df.columns else []
+    selected_rules = st.multiselect("Filter by Detection Rule", rule_options, default=[])
+with f_col3:
+    approval_col = "Human Approval Needed" if "Human Approval Needed" in audit_df.columns else "human_approval_required"
+    approval_filter = st.selectbox("Human Approval Needed", ["All", "Yes", "No"])
+
+filtered_df = audit_df.copy()
 if search_term:
-    filtered_df = audit_df[audit_df.astype(str).apply(lambda x: x.str.contains(search_term, case=False)).any(axis=1)]
-else:
-    filtered_df = audit_df
+    filtered_df = filtered_df[filtered_df.astype(str).apply(lambda x: x.str.contains(search_term, case=False)).any(axis=1)]
+if selected_rules and detection_rule_col in filtered_df.columns:
+    filtered_df = filtered_df[filtered_df[detection_rule_col].isin(selected_rules)]
+if approval_filter != "All" and approval_col in filtered_df.columns:
+    want = approval_filter == "Yes"
+    filtered_df = filtered_df[filtered_df[approval_col].astype(bool) == want]
+
+# Sortable natively by clicking any column header in st.dataframe; this
+# selectbox additionally offers an explicit "sort by" control for anyone who
+# prefers it to column-header clicking.
+sortable_cols = [c for c in [discrepancy_col, "Transaction ID", detection_rule_col] if c in filtered_df.columns]
+sort_col = st.selectbox("Sort by", sortable_cols, index=0) if sortable_cols else None
+if sort_col:
+    filtered_df = filtered_df.sort_values(
+        by=sort_col, key=(abs if sort_col == discrepancy_col else None), ascending=False
+    )
 
 st.dataframe(filtered_df, use_container_width=True)
+st.caption(f"Showing {len(filtered_df)} of {len(audit_df)} flagged transactions.")
+
+# --- Record selection / detail view --------------------------------------
+id_col = "Transaction ID" if "Transaction ID" in audit_df.columns else "transaction_id"
+if id_col in filtered_df.columns and not filtered_df.empty:
+    selected_id = st.selectbox("🔎 Inspect a specific transaction:", filtered_df[id_col].astype(str).tolist())
+    if selected_id:
+        record = filtered_df[filtered_df[id_col].astype(str) == selected_id].iloc[0]
+        with st.expander(f"Full record for {selected_id}", expanded=True):
+            st.json(record.dropna().to_dict())
 
 st.markdown("---")
 
-# 5. Settlement Q&A AI Assistant (Groq Architecture)
+# --- Settlement Q&A AI Assistant ------------------------------------------
 st.subheader("💬 Settlement Q&A Assistant")
-st.caption("Ask questions about anomalies, contract clauses, or fee structures.")
+st.caption("Ask questions about anomalies, contract clauses, or fee structures. "
+           "Answers are grounded strictly in the audit data shown above — the assistant is instructed "
+           "to say so rather than guess if something isn't in that data.")
 
 api_key = os.environ.get("GROQ_API_KEY")
 try:
@@ -132,19 +166,34 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("E.g., 'Why was transaction TXN_1179 escalated?'"):
+if prompt := st.chat_input("E.g., 'Why was transaction 1179 escalated?'"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         if client:
-            # Token-optimized context payload
-            slim_records = audit_df.drop(columns=["Date", "Narration"], errors="ignore").head(25).to_dict(orient="records")
-            system_instruction = f"""You are the O'Chicken Financial Q&A Assistant. Answer precisely based on:
+            # Question-aware context: always includes any transaction ID the
+            # user explicitly mentions (not just a positional head() slice),
+            # plus the highest-risk rows for general questions.
+            context_df = build_qna_context(audit_df, prompt, id_col=id_col)
+            slim_records = context_df.drop(columns=["Date", "Narration"], errors="ignore").to_dict(orient="records")
+            kpi_summary = compute_kpis(audit_df)
+
+            system_instruction = f"""You are the LedgerLens Financial Q&A Assistant.
+
 Contract: {json.dumps(contract)}
-Audit Data Sample: {json.dumps(slim_records)}
-Rules: Be concise, cite exact Transaction IDs, and detail the fee math clearly."""
+Summary metrics (computed deterministically, not by you): {json.dumps(kpi_summary)}
+Audit data provided to you (a subset of the full audit sheet, selected because it is either \
+highest-risk or explicitly mentioned in the user's question): {json.dumps(slim_records, default=str)}
+
+Rules:
+1. Answer ONLY using the contract terms and audit data given above. Never invent transaction IDs, \
+amounts, dates, or root causes that are not present in this data.
+2. If the user asks about a transaction ID that does not appear in the data provided, say explicitly \
+that you don't have that transaction in the current context rather than guessing or estimating.
+3. Cite exact Transaction IDs and show the fee/tax/net math when relevant.
+4. Be concise and professional."""
 
             try:
                 messages_payload = [{"role": "system", "content": system_instruction}]
@@ -154,7 +203,7 @@ Rules: Be concise, cite exact Transaction IDs, and detail the fee math clearly."
                 response = client.chat.completions.create(
                     model="openai/gpt-oss-120b",
                     messages=messages_payload,
-                    temperature=0.1
+                    temperature=0.1,
                 )
                 answer = response.choices[0].message.content
                 st.markdown(answer)
@@ -164,4 +213,5 @@ Rules: Be concise, cite exact Transaction IDs, and detail the fee math clearly."
                 st.markdown(err_text)
                 st.session_state.messages.append({"role": "assistant", "content": err_text})
         else:
-            st.markdown("⚠️ Groq client not initialized. Ensure `GROQ_API_KEY` is exported in your environment.")
+            st.markdown("⚠️ Groq client not initialized. Set `GROQ_API_KEY` in your `.env` file "
+                         "(copy `api.env.example` to `.env`) and restart the app.")

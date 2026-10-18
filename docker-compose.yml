@@ -3,9 +3,8 @@ version: '3.8'
 services:
   finance-controller-pipeline:
     build: .
-    container_name: ochicken_finance_controller
+    container_name: ledgerlens_pipeline
     environment:
-      # Replaced GEMINI_API_KEY with the unified Groq configuration
       - GROQ_API_KEY=${GROQ_API_KEY}
     volumes:
       - ./output:/app/output
@@ -13,11 +12,23 @@ services:
 
   webhook-api-server:
     build: .
-    container_name: ochicken_webhook_daemon
+    container_name: ledgerlens_webhook_daemon
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
-      # Added to support Razorpay webhook signature validation
       - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
+      - WEBHOOK_STRICT_MODE=${WEBHOOK_STRICT_MODE:-false}
     ports:
       - "8000:8000"
     command: ["python", "-m", "uvicorn", "src.webhook_receiver:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  dashboard:
+    build: .
+    container_name: ledgerlens_dashboard
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    volumes:
+      - ./output:/app/output
+    ports:
+      - "8501:8501"
+    working_dir: /app/src
+    command: ["python", "-m", "streamlit", "run", "app.py", "--server.address=0.0.0.0"]

@@ -1,13 +1,15 @@
 transaction_id,root_cause,confidence,recommended_action,human_approval_required
-1032,GHOST_TXN,0.9,Remove duplicate entry from ledger,True
-1006,PROMO_RATE,0.78,Verify promotional MDR applied; adjust reconciliation if needed,True
-1010,NEFT_VENDOR_DEBIT,0.75,Record as vendor payment; no fee adjustment required,True
-1012,GATEWAY_OVERCHARGE,0.85,Request fee reconciliation and refund excess fees from gateway,True
-1025,GATEWAY_OVERCHARGE,0.85,Request fee reconciliation and refund excess fees from gateway,True
-1026,UPI_WAIVER,0.8,Confirm UPI transaction; no commission should be applied,True
-1027,NEFT_VENDOR_DEBIT,0.75,Record as vendor payment; no fee adjustment required,True
-1033,GATEWAY_OVERCHARGE,0.85,Request fee reconciliation and refund excess fees from gateway,True
-1039,GATEWAY_OVERCHARGE,0.85,Request fee reconciliation and refund excess fees from gateway,True
-1041,GATEWAY_OVERCHARGE,0.85,Request fee reconciliation and refund excess fees from gateway,True
-1044,GATEWAY_OVERCHARGE,0.85,Request fee reconciliation and refund excess fees from gateway,True
-1047,GATEWAY_OVERCHARGE,0.85,Request fee reconciliation and refund excess fees from gateway,True
+1051,Fallback applied (No LLM diagnosis): DUPLICATE_RECORD_BANK_SIDE,0.0,ESCALATE TO HUMAN REVIEW,True
+1076,Fallback applied (No LLM diagnosis): DUPLICATE_RECORD_GATEWAY_SIDE,0.0,ESCALATE TO HUMAN REVIEW,True
+1006,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1010,Fallback applied (No LLM diagnosis): GHOST_TXN_BANK_SIDE,0.0,ESCALATE TO HUMAN REVIEW,True
+1012,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1021,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1023,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1031,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1040,Fallback applied (No LLM diagnosis): GHOST_TXN_BANK_SIDE,0.0,ESCALATE TO HUMAN REVIEW,True
+1041,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1058,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1071,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1072,Fallback applied (No LLM diagnosis): NET_MISMATCH_UNRESOLVED,0.0,ESCALATE TO HUMAN REVIEW,True
+1075,Fallback applied (No LLM diagnosis): GHOST_TXN_GATEWAY_SIDE,0.0,ESCALATE TO HUMAN REVIEW,True
